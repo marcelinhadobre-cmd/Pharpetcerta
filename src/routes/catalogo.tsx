@@ -24,7 +24,7 @@ function CatalogPage() {
     queryKey: ["products-public"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("products")
+        .from("pharpep_products")
         .select("id, name, description, price, primary_image_url")
         .eq("active", true)
         .order("sort_order", { ascending: true })
@@ -38,7 +38,7 @@ function CatalogPage() {
   useEffect(() => {
     const ch = supabase
       .channel("products-public")
-      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "pharpep_products" }, () => {
         window.dispatchEvent(new Event("focus"));
       })
       .subscribe();

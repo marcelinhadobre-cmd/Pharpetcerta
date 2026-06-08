@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { LayoutDashboard, Package, LogOut, ShoppingBag, Users, ClipboardList } from "lucide-react";
+import { LayoutDashboard, Package, LogOut, ShoppingBag, Users, ClipboardList, Wallet } from "lucide-react";
 import logo from "@/assets/pharpep-logo.png";
 
 export const Route = createFileRoute("/admin")({
@@ -26,6 +26,7 @@ function AdminLayout() {
     { to: "/admin/produtos", label: "Produtos", icon: Package },
     { to: "/admin/vendas", label: "Vendas", icon: ShoppingBag },
     { to: "/admin/pedidos", label: "Pedidos", icon: ClipboardList },
+    { to: "/admin/financas", label: "Finanças", icon: Wallet },
     { to: "/admin/usuarios", label: "Usuários", icon: Users },
   ] as const;
 

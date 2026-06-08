@@ -43,7 +43,7 @@ interface VendaRow {
   observacoes: string;
 }
 
-const calcLucro = (valor: number) => valor * 0.04 + 50;
+const calcLucro = (valor: number) => valor * 0.1;
 
 function gerarEtiqueta(venda: VendaRow) {
   const W = 540, H = 410;
@@ -213,7 +213,7 @@ function VendasAdmin() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold">Vendas</h1>
-          <p className="text-sm text-muted-foreground">Lucro = 4% do valor + R$ 50,00 por venda</p>
+          <p className="text-sm text-muted-foreground">Lucro = 10% do valor por venda</p>
         </div>
         <button
           onClick={() => { setEditing(null); setShowForm(true); }}
@@ -276,7 +276,7 @@ function VendasAdmin() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/5 text-left">
-                  {["Data", "Cliente", "CPF", "Telefone", "Produto", "Valor", "Lucro", "Status", ""].map((h) => (
+                  {["Data", "Cliente", "CPF", "Telefone", "Produto", "Valor", "Lucro", ""].map((h) => (
                     <th key={h} className="whitespace-nowrap px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">
                       {h}
                     </th>
@@ -298,21 +298,6 @@ function VendasAdmin() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 font-semibold text-green-400">
                       {formatBRL(calcLucro(Number(v.valor)))}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                          v.status === "concluido"
-                            ? "bg-green-500/15 text-green-400"
-                            : v.status === "cancelado"
-                              ? "bg-red-500/15 text-red-400"
-                              : v.status === "enviado"
-                                ? "bg-blue-500/15 text-blue-400"
-                                : "bg-yellow-500/15 text-yellow-400"
-                        }`}
-                      >
-                        {v.status}
-                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
@@ -373,7 +358,6 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
   const [cep, setCep] = useState(initial?.endereco_cep ?? "");
   const [produto, setProduto] = useState(initial?.produto ?? "");
   const [valor, setValor] = useState(initial ? String(initial.valor) : "");
-  const [status, setStatus] = useState(initial?.status ?? "pendente");
   const [observacoes, setObservacoes] = useState(initial?.observacoes ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -394,7 +378,7 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
       endereco_cep: cep,
       produto,
       valor: valorNum,
-      status,
+      status: "concluido",
       observacoes,
     };
     try {
@@ -490,14 +474,6 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
               <Field label="Valor (R$)">
                 <input required value={valor} onChange={(e) => setValor(e.target.value)} className={inputCls} placeholder="0,00" />
               </Field>
-              <Field label="Status">
-                <select value={status} onChange={(e) => setStatus(e.target.value)} className={inputCls}>
-                  <option value="pendente">Pendente</option>
-                  <option value="enviado">Enviado</option>
-                  <option value="concluido">Concluído</option>
-                  <option value="cancelado">Cancelado</option>
-                </select>
-              </Field>
             </div>
             <Field label="Observações">
               <textarea
@@ -515,7 +491,7 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
               <p className="text-xs text-muted-foreground">Lucro desta venda</p>
               <p className="mt-1 font-display text-xl font-bold text-green-400">{formatBRL(calcLucro(valorNum))}</p>
               <p className="text-[11px] text-muted-foreground">
-                4% de {formatBRL(valorNum)} ({formatBRL(valorNum * 0.04)}) + R$ 50,00
+                10% de {formatBRL(valorNum)}
               </p>
             </div>
           )}

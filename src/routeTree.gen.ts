@@ -18,6 +18,7 @@ import { Route as AdminVendasRouteImport } from './routes/admin.vendas'
 import { Route as AdminUsuariosRouteImport } from './routes/admin.usuarios'
 import { Route as AdminProdutosRouteImport } from './routes/admin.produtos'
 import { Route as AdminPedidosRouteImport } from './routes/admin.pedidos'
+import { Route as AdminFinancasRouteImport } from './routes/admin.financas'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 
 const ProtocoloRoute = ProtocoloRouteImport.update({
@@ -65,6 +66,11 @@ const AdminPedidosRoute = AdminPedidosRouteImport.update({
   path: '/pedidos',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminFinancasRoute = AdminFinancasRouteImport.update({
+  id: '/financas',
+  path: '/financas',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminDashboardRoute = AdminDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -78,6 +84,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/protocolo': typeof ProtocoloRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/financas': typeof AdminFinancasRoute
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/usuarios': typeof AdminUsuariosRoute
@@ -90,6 +97,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/protocolo': typeof ProtocoloRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/financas': typeof AdminFinancasRoute
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/usuarios': typeof AdminUsuariosRoute
@@ -103,6 +111,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/protocolo': typeof ProtocoloRoute
   '/admin/dashboard': typeof AdminDashboardRoute
+  '/admin/financas': typeof AdminFinancasRoute
   '/admin/pedidos': typeof AdminPedidosRoute
   '/admin/produtos': typeof AdminProdutosRoute
   '/admin/usuarios': typeof AdminUsuariosRoute
@@ -117,6 +126,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/protocolo'
     | '/admin/dashboard'
+    | '/admin/financas'
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/usuarios'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/protocolo'
     | '/admin/dashboard'
+    | '/admin/financas'
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/usuarios'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/protocolo'
     | '/admin/dashboard'
+    | '/admin/financas'
     | '/admin/pedidos'
     | '/admin/produtos'
     | '/admin/usuarios'
@@ -220,6 +232,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminPedidosRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/financas': {
+      id: '/admin/financas'
+      path: '/financas'
+      fullPath: '/admin/financas'
+      preLoaderRoute: typeof AdminFinancasRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/dashboard': {
       id: '/admin/dashboard'
       path: '/dashboard'
@@ -232,6 +251,7 @@ declare module '@tanstack/react-router' {
 
 interface AdminRouteChildren {
   AdminDashboardRoute: typeof AdminDashboardRoute
+  AdminFinancasRoute: typeof AdminFinancasRoute
   AdminPedidosRoute: typeof AdminPedidosRoute
   AdminProdutosRoute: typeof AdminProdutosRoute
   AdminUsuariosRoute: typeof AdminUsuariosRoute
@@ -240,6 +260,7 @@ interface AdminRouteChildren {
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminDashboardRoute: AdminDashboardRoute,
+  AdminFinancasRoute: AdminFinancasRoute,
   AdminPedidosRoute: AdminPedidosRoute,
   AdminProdutosRoute: AdminProdutosRoute,
   AdminUsuariosRoute: AdminUsuariosRoute,

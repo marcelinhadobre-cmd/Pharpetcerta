@@ -54,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
       setSession(s);
       if (s?.user) {
+        setLoading(true);
         setTimeout(async () => {
           const [admin, prof] = await Promise.all([
             checkAdmin(s.user.id),
@@ -61,24 +62,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ]);
           setIsAdmin(admin);
           setProfile(prof);
+          setLoading(false);
         }, 0);
       } else {
         setIsAdmin(false);
         setProfile(null);
+        setLoading(false);
       }
     });
 
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      setSession(s);
-      if (s?.user) {
-        const [admin, prof] = await Promise.all([
-          checkAdmin(s.user.id),
-          fetchProfile(s.user.id),
-        ]);
-        setIsAdmin(admin);
-        setProfile(prof);
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      if (!s?.user) {
+        setSession(s);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
