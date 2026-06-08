@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -6,6 +6,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { supabase } from "@/integrations/supabase/client";
 import { trackEvent } from "@/lib/analytics";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useAuth } from "@/hooks/use-auth";
 
 export const Route = createFileRoute("/catalogo")({
   head: () => ({
@@ -18,13 +19,28 @@ export const Route = createFileRoute("/catalogo")({
 });
 
 function CatalogPage() {
+  const { isAdmin, loading } = useAuth();
+  const navigate = useNavigate();
+
   useEffect(() => { trackEvent("page_view", undefined, { path: "/catalogo" }); }, []);
+
+  useEffect(() => {
+    if (!loading && isAdmin) navigate({ to: "/admin/dashboard", replace: true });
+  }, [loading, isAdmin, navigate]);
+
+  if (loading || isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-mesh">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["products-public"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("pharpep_products")
+        .from("products")
         .select("id, name, description, price, primary_image_url")
         .eq("active", true)
         .order("sort_order", { ascending: true })
@@ -38,7 +54,7 @@ function CatalogPage() {
   useEffect(() => {
     const ch = supabase
       .channel("products-public")
-      .on("postgres_changes", { event: "*", schema: "public", table: "pharpep_products" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "products" }, () => {
         window.dispatchEvent(new Event("focus"));
       })
       .subscribe();

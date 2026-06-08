@@ -678,11 +678,23 @@ function StepProtocol({ protocol, profile, bio, lifestyle, imc, onReset }: {
 
 function ProtocolPage() {
   const navigate = useNavigate();
-  const { session, loading } = useAuth();
+  const { session, isAdmin, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && isAdmin) navigate({ to: "/admin/dashboard", replace: true });
+  }, [loading, isAdmin, navigate]);
 
   useEffect(() => {
     if (!loading && !session) navigate({ to: "/login" });
   }, [loading, session, navigate]);
+
+  if (loading || isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-mesh">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   const [step, setStep] = useState(0);
   const [generated, setGenerated] = useState(false);

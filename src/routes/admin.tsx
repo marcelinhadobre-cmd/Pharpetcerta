@@ -14,7 +14,9 @@ function AdminLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
-    if (!loading && (!session || !isAdmin)) navigate({ to: "/login" });
+    // Só redireciona depois que a verificação inicial terminou
+    if (loading) return;
+    if (!session || !isAdmin) navigate({ to: "/login", replace: true });
   }, [loading, session, isAdmin, navigate]);
 
   if (loading || !session || !isAdmin) {

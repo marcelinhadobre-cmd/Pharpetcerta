@@ -1,8 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { ArrowRight, Sparkles, ShieldCheck, Zap, ClipboardList } from "lucide-react";
 import { SiteHeader } from "@/components/SiteHeader";
 import { trackEvent } from "@/lib/analytics";
+import { useAuth } from "@/hooks/use-auth";
 import hero from "@/assets/hero-molecules.jpg";
 
 export const Route = createFileRoute("/")({
@@ -16,9 +17,25 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const { isAdmin, loading } = useAuth();
+  const navigate = useNavigate();
+
   useEffect(() => {
     trackEvent("page_view", undefined, { path: "/" });
   }, []);
+
+  // Admin nunca fica nessa página — vai direto para o painel
+  useEffect(() => {
+    if (!loading && isAdmin) navigate({ to: "/admin/dashboard", replace: true });
+  }, [loading, isAdmin, navigate]);
+
+  if (loading || isAdmin) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-mesh">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-mesh">

@@ -29,7 +29,7 @@ function ProductsAdmin() {
   const { data: products, isLoading } = useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("pharpep_products").select("*").order("sort_order").order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false });
       if (error) throw error;
       return data as ProductRow[];
     },
@@ -37,7 +37,7 @@ function ProductsAdmin() {
 
   const onDelete = async (id: string) => {
     if (!confirm("Excluir este produto?")) return;
-    const { error } = await supabase.from("pharpep_products").delete().eq("id", id);
+    const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Produto excluído");
     qc.invalidateQueries({ queryKey: ["admin-products"] });
@@ -144,10 +144,10 @@ function ProductForm({ initial, onClose }: { initial: ProductRow | null; onClose
     try {
       let productId = initial?.id;
       if (initial) {
-        const { error } = await supabase.from("pharpep_products").update(payload).eq("id", initial.id);
+        const { error } = await supabase.from("products").update(payload).eq("id", initial.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from("pharpep_products").insert(payload).select("id").single();
+        const { data, error } = await supabase.from("products").insert(payload).select("id").single();
         if (error) throw error;
         productId = data.id;
       }

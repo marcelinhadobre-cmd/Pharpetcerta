@@ -1,12 +1,35 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useState, useMemo, type FormEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, Trash2, TrendingUp, TrendingDown, Wallet, X } from "lucide-react";
 import { formatBRL } from "@/lib/whatsapp";
-import { format } from "date-fns";
+import {
+  format,
+  startOfDay,
+  endOfDay,
+  startOfMonth,
+  endOfMonth,
+  subDays,
+  parseISO,
+  isWithinInterval,
+  eachDayOfInterval,
+  startOfWeek,
+} from "date-fns";
 import { ptBR } from "date-fns/locale";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Legend,
+  AreaChart,
+  Area,
+} from "recharts";
 
 export const Route = createFileRoute("/admin/financas")({
   component: FinancasAdmin,
@@ -21,11 +44,82 @@ interface FinancaRow {
   tipo: "entrada" | "saida";
 }
 
+type FilterType = "hoje" | "semana" | "mes" | "personalizado";
+
+function getRange(filter: FilterType, from: string, to: string) {
+  const now = new Date();
+  if (filter === "hoje") return { start: startOfDay(now), end: endOfDay(now) };
+  if (filter === "semana") return { start: startOfDay(subDays(now, 6)), end: endOfDay(now) };
+  if (filter === "mes") return { start: startOfMonth(now), end: endOfMonth(now) };
+  const s = from ? parseISO(from) : startOfMonth(now);
+  const e = to ? parseISO(to) : now;
+  return { start: startOfDay(s), end: endOfDay(e >= s ? e : s) };
+}
+
+function buildChartData(financas: FinancaRow[], start: Date, end: Date) {
+  const days = eachDayOfInterval({ start, end });
+  const groupWeekly = days.length > 31;
+  const map = new Map<string, { label: string; entradas: number; saidas: number }>();
+
+  for (const d of days) {
+    const key = groupWeekly
+      ? format(startOfWeek(d, { weekStartsOn: 1 }), "yyyy-MM-dd")
+      : format(d, "yyyy-MM-dd");
+    if (!map.has(key)) {
+      map.set(key, { label: format(d, "dd/MM", { locale: ptBR }), entradas: 0, saidas: 0 });
+    }
+  }
+
+  for (const f of financas) {
+    const d = parseISO(f.data);
+    const key = groupWeekly
+      ? format(startOfWeek(d, { weekStartsOn: 1 }), "yyyy-MM-dd")
+      : f.data;
+    const entry = map.get(key);
+    if (entry) {
+      if (f.tipo === "entrada") entry.entradas += Number(f.valor);
+      else entry.saidas += Number(f.valor);
+    }
+  }
+
+  let cum = 0;
+  return Array.from(map.values()).map((v) => {
+    cum += v.entradas - v.saidas;
+    return { ...v, saldo: cum };
+  });
+}
+
+function fmtTick(v: number) {
+  if (v === 0) return "R$0";
+  if (Math.abs(v) >= 1000) return `R$${(v / 1000).toFixed(1)}k`;
+  return `R$${v}`;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function CurrencyTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-xl border border-white/10 bg-[#1a1a2e] px-4 py-3 text-xs shadow-xl">
+      <p className="mb-1.5 font-semibold text-white">{label}</p>
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {payload.map((p: any) => (
+        <p key={p.name} style={{ color: p.color }} className="mt-0.5">
+          {p.name}: {formatBRL(p.value)}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function FinancasAdmin() {
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  const [filter, setFilter] = useState<FilterType>("mes");
+  const now = new Date();
+  const [customFrom, setCustomFrom] = useState(format(startOfMonth(now), "yyyy-MM-dd"));
+  const [customTo, setCustomTo] = useState(format(now, "yyyy-MM-dd"));
 
-  const { data: financas = [], isLoading } = useQuery({
+  const { data: allFinancas = [], isLoading } = useQuery({
     queryKey: ["admin-financas"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -37,6 +131,19 @@ function FinancasAdmin() {
       return data as FinancaRow[];
     },
   });
+
+  const range = useMemo(() => getRange(filter, customFrom, customTo), [filter, customFrom, customTo]);
+
+  const financas = useMemo(
+    () =>
+      allFinancas.filter((f) =>
+        isWithinInterval(parseISO(f.data + "T00:00:00"), range)
+      ),
+    [allFinancas, range]
+  );
+
+  const chartData = useMemo(() => buildChartData(financas, range.start, range.end), [financas, range]);
+  const hasChartData = chartData.some((d) => d.entradas > 0 || d.saidas > 0);
 
   const onDelete = async (id: string) => {
     if (!confirm("Excluir este lançamento?")) return;
@@ -50,8 +157,16 @@ function FinancasAdmin() {
   const totalSaidas = financas.filter((f) => f.tipo === "saida").reduce((s, f) => s + Number(f.valor), 0);
   const saldo = totalEntradas - totalSaidas;
 
+  const FILTERS: { key: FilterType; label: string }[] = [
+    { key: "hoje", label: "Hoje" },
+    { key: "semana", label: "7 dias" },
+    { key: "mes", label: "Este mês" },
+    { key: "personalizado", label: "Personalizado" },
+  ];
+
   return (
     <div className="space-y-8">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-3xl font-bold">Finanças</h1>
@@ -65,7 +180,41 @@ function FinancasAdmin() {
         </button>
       </div>
 
-      {/* Cards */}
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        {FILTERS.map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`rounded-xl px-4 py-2 text-sm font-medium transition ${
+              filter === f.key
+                ? "btn-hero"
+                : "border border-border bg-input/30 text-muted-foreground hover:bg-white/5"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+        {filter === "personalizado" && (
+          <>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="rounded-xl border border-border bg-input/40 px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+            <span className="text-muted-foreground">—</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="rounded-xl border border-border bg-input/40 px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+          </>
+        )}
+      </div>
+
+      {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="card-premium rounded-2xl p-5">
           <div className="flex items-center justify-between">
@@ -92,11 +241,82 @@ function FinancasAdmin() {
         </div>
       </div>
 
+      {/* Charts */}
+      {hasChartData && (
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {/* Bar chart: Entradas vs Saídas */}
+          <div className="card-premium rounded-2xl p-5">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Entradas vs Saídas
+            </p>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={chartData} barGap={4} barCategoryGap="30%">
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#888" }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#888" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={fmtTick}
+                  width={60}
+                />
+                <RechartsTooltip content={<CurrencyTooltip />} cursor={{ fill: "rgba(255,255,255,0.03)" }} />
+                <Legend
+                  formatter={(v) => (v === "entradas" ? "Entradas" : "Saídas")}
+                  wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+                />
+                <Bar dataKey="entradas" fill="#4ade80" radius={[4, 4, 0, 0]} maxBarSize={40} name="entradas" />
+                <Bar dataKey="saidas" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={40} name="saidas" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Area chart: Saldo acumulado */}
+          <div className="card-premium rounded-2xl p-5">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Saldo Acumulado
+            </p>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="saldoGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#a78bfa" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#888" }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#888" }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={fmtTick}
+                  width={60}
+                />
+                <RechartsTooltip content={<CurrencyTooltip />} cursor={{ stroke: "rgba(167,139,250,0.2)" }} />
+                <Area
+                  type="monotone"
+                  dataKey="saldo"
+                  stroke="#a78bfa"
+                  strokeWidth={2}
+                  fill="url(#saldoGrad)"
+                  name="Saldo"
+                  dot={false}
+                  activeDot={{ r: 4, fill: "#a78bfa" }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       {isLoading ? (
         <p className="text-muted-foreground">Carregando...</p>
       ) : financas.length === 0 ? (
-        <div className="glass rounded-2xl p-10 text-center text-muted-foreground">Nenhum lançamento registrado.</div>
+        <div className="glass rounded-2xl p-10 text-center text-muted-foreground">
+          Nenhum lançamento no período selecionado.
+        </div>
       ) : (
         <div className="card-premium overflow-hidden rounded-2xl">
           <div className="overflow-x-auto">
