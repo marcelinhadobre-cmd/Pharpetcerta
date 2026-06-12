@@ -10,8 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProtocoloRouteImport } from './routes/protocolo'
+import { Route as PerfilRouteImport } from './routes/perfil'
+import { Route as PedidosRouteImport } from './routes/pedidos'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ContatoRouteImport } from './routes/contato'
 import { Route as CatalogoRouteImport } from './routes/catalogo'
+import { Route as CarrinhoRouteImport } from './routes/carrinho'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminVendasRouteImport } from './routes/admin.vendas'
@@ -26,14 +30,34 @@ const ProtocoloRoute = ProtocoloRouteImport.update({
   path: '/protocolo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PerfilRoute = PerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PedidosRoute = PedidosRouteImport.update({
+  id: '/pedidos',
+  path: '/pedidos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContatoRoute = ContatoRouteImport.update({
+  id: '/contato',
+  path: '/contato',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CatalogoRoute = CatalogoRouteImport.update({
   id: '/catalogo',
   path: '/catalogo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CarrinhoRoute = CarrinhoRouteImport.update({
+  id: '/carrinho',
+  path: '/carrinho',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -80,8 +104,12 @@ const AdminDashboardRoute = AdminDashboardRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/carrinho': typeof CarrinhoRoute
   '/catalogo': typeof CatalogoRoute
+  '/contato': typeof ContatoRoute
   '/login': typeof LoginRoute
+  '/pedidos': typeof PedidosRoute
+  '/perfil': typeof PerfilRoute
   '/protocolo': typeof ProtocoloRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/financas': typeof AdminFinancasRoute
@@ -93,8 +121,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/carrinho': typeof CarrinhoRoute
   '/catalogo': typeof CatalogoRoute
+  '/contato': typeof ContatoRoute
   '/login': typeof LoginRoute
+  '/pedidos': typeof PedidosRoute
+  '/perfil': typeof PerfilRoute
   '/protocolo': typeof ProtocoloRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/financas': typeof AdminFinancasRoute
@@ -107,8 +139,12 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/carrinho': typeof CarrinhoRoute
   '/catalogo': typeof CatalogoRoute
+  '/contato': typeof ContatoRoute
   '/login': typeof LoginRoute
+  '/pedidos': typeof PedidosRoute
+  '/perfil': typeof PerfilRoute
   '/protocolo': typeof ProtocoloRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/financas': typeof AdminFinancasRoute
@@ -122,8 +158,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/carrinho'
     | '/catalogo'
+    | '/contato'
     | '/login'
+    | '/pedidos'
+    | '/perfil'
     | '/protocolo'
     | '/admin/dashboard'
     | '/admin/financas'
@@ -135,8 +175,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/carrinho'
     | '/catalogo'
+    | '/contato'
     | '/login'
+    | '/pedidos'
+    | '/perfil'
     | '/protocolo'
     | '/admin/dashboard'
     | '/admin/financas'
@@ -148,8 +192,12 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/carrinho'
     | '/catalogo'
+    | '/contato'
     | '/login'
+    | '/pedidos'
+    | '/perfil'
     | '/protocolo'
     | '/admin/dashboard'
     | '/admin/financas'
@@ -162,8 +210,12 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  CarrinhoRoute: typeof CarrinhoRoute
   CatalogoRoute: typeof CatalogoRoute
+  ContatoRoute: typeof ContatoRoute
   LoginRoute: typeof LoginRoute
+  PedidosRoute: typeof PedidosRoute
+  PerfilRoute: typeof PerfilRoute
   ProtocoloRoute: typeof ProtocoloRoute
 }
 
@@ -176,6 +228,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtocoloRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/perfil': {
+      id: '/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof PerfilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pedidos': {
+      id: '/pedidos'
+      path: '/pedidos'
+      fullPath: '/pedidos'
+      preLoaderRoute: typeof PedidosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -183,11 +249,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contato': {
+      id: '/contato'
+      path: '/contato'
+      fullPath: '/contato'
+      preLoaderRoute: typeof ContatoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/catalogo': {
       id: '/catalogo'
       path: '/catalogo'
       fullPath: '/catalogo'
       preLoaderRoute: typeof CatalogoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/carrinho': {
+      id: '/carrinho'
+      path: '/carrinho'
+      fullPath: '/carrinho'
+      preLoaderRoute: typeof CarrinhoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -272,8 +352,12 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  CarrinhoRoute: CarrinhoRoute,
   CatalogoRoute: CatalogoRoute,
+  ContatoRoute: ContatoRoute,
   LoginRoute: LoginRoute,
+  PedidosRoute: PedidosRoute,
+  PerfilRoute: PerfilRoute,
   ProtocoloRoute: ProtocoloRoute,
 }
 export const routeTree = rootRouteImport

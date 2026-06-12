@@ -145,4 +145,20 @@
     from { opacity: 0; transform: translateY(20px); }
     to { opacity: 1; transform: translateY(0); }
   }
+  .cart-shake { animation: cartShake 2s ease-in-out infinite; }
+  @keyframes cartShake {
+    0%, 60%, 100% { transform: rotate(0deg) scale(1); }
+    65%  { transform: rotate(-12deg) scale(1.1); }
+    70%  { transform: rotate(10deg)  scale(1.1); }
+    75%  { transform: rotate(-8deg)  scale(1.05); }
+    80%  { transform: rotate(6deg)   scale(1.05); }
+    85%  { transform: rotate(-4deg)  scale(1); }
+    90%  { transform: rotate(2deg)   scale(1); }
+    95%  { transform: rotate(0deg)   scale(1); }
+  }
+  .cart-pulse { animation: cartPulse 2s ease-in-out infinite; }
+  @keyframes cartPulse {
+    0%, 55%, 100% { box-shadow: 0 0 0 0 oklch(0.78 0.25 305 / 0.6); }
+    60% { box-shadow: 0 0 0 10px oklch(0.78 0.25 305 / 0); }
+  }
 }

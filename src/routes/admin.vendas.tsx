@@ -1,15 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent, useCallback } from "react";
+import { useState, type FormEvent, useCallback, useRef, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Plus, Trash2, DollarSign, TrendingUp, ShoppingBag, X, Pencil, Eye, Tag,
-  Package, ChevronDown,
+  Package, ChevronDown, Search, FileText,
 } from "lucide-react";
 import { formatBRL } from "@/lib/whatsapp";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import jsPDF from "jspdf";
 import {
   Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
@@ -18,24 +19,18 @@ export const Route = createFileRoute("/admin/vendas")({
   component: VendasAdmin,
 });
 
-// ─── Remetente ────────────────────────────────────────────────────────────────
-const REMETENTE = {
-  nome: "PharPep Suplementos",
-  rua: "Av. Central",
-  numero: "456",
-  bairro: "Centro",
-  cidade: "São Paulo",
-  estado: "SP",
-  cep: "01310-100",
-  telefone: "(11) 99999-9999",
-};
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface VendaItem {
   product_id: string;
   product_name: string;
   quantity: number;
   unit_price: number;
+}
+
+interface VendaDesconto {
+  nome: string;
+  tipo: "%" | "R$";
+  valor: number;
 }
 
 interface VendaRow {
@@ -51,6 +46,7 @@ interface VendaRow {
   endereco_estado: string;
   endereco_cep: string;
   itens: VendaItem[];
+  descontos: VendaDesconto[];
   frete: number;
   valor: number;
   status: string;
@@ -97,263 +93,251 @@ function parseBRL(v: string) {
 
 const calcLucro = (valor: number) => valor * 0.1;
 
-// ─── PDF como Canvas ──────────────────────────────────────────────────────────
+// ─── Geração de PDF com jsPDF ─────────────────────────────────────────────────
 function gerarPDF(venda: VendaRow) {
   const itens: VendaItem[] = Array.isArray(venda.itens) ? venda.itens : [];
+  const descontos: VendaDesconto[] = Array.isArray(venda.descontos) ? venda.descontos : [];
   const subtotal = itens.reduce((s, i) => s + i.quantity * i.unit_price, 0);
+  const descontoTotal = descontos.reduce(
+    (s, d) => s + (d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor), 0
+  );
   const frete = Number(venda.frete) || 0;
-  const total = subtotal + frete;
+  const total = Math.max(0, subtotal - descontoTotal + frete);
 
-  const W = 600;
-  const itemH = 28;
-  const fixedH = 460;
-  const H = fixedH + Math.max(itens.length, 1) * itemH + 20;
+  const doc = new jsPDF({ format: "a4", unit: "mm" });
+  const W = 210;
+  const M = 15; // margin
+  let y = 0;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = W * 2;
-  canvas.height = H * 2;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(2, 2);
+  // ── Header ──────────────────────────────────────────────────────
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, W, 42, "F");
 
-  // Fundo
-  ctx.fillStyle = "#f8fafc";
-  ctx.fillRect(0, 0, W, H);
+  // Logo / nome
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.text("PHARPEP SUPLEMENTOS", M, 18);
 
-  // Borda externa
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, 8, 8, W - 16, H - 16, 12);
-  ctx.stroke();
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(148, 163, 184);
+  doc.text("Orçamento / Comprovante de Venda", M, 27);
 
-  // Header verde
-  ctx.fillStyle = "#0f172a";
-  roundRectFill(ctx, 8, 8, W - 16, 70, 12, 0);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 18px Arial";
-  ctx.textBaseline = "top";
-  ctx.fillText("PHARPEP SUPLEMENTOS", 24, 22);
-  ctx.font = "11px Arial";
-  ctx.fillStyle = "#94a3b8";
-  ctx.fillText("Orçamento / Comprovante de Venda", 24, 46);
+  // Pedido # e data (direita)
+  doc.setTextColor(125, 211, 252);
+  doc.setFontSize(11);
+  doc.setFont("helvetica", "bold");
+  doc.text(`Pedido #${venda.id.slice(0, 8).toUpperCase()}`, W - M, 18, { align: "right" });
+  doc.setTextColor(148, 163, 184);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    format(new Date(venda.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }),
+    W - M, 27, { align: "right" }
+  );
 
-  // Nº do pedido + data
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#7dd3fc";
-  ctx.font = "bold 12px Arial";
-  ctx.fillText(`Pedido #${venda.id.slice(0, 8).toUpperCase()}`, W - 24, 22);
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "10px Arial";
-  ctx.fillText(format(new Date(venda.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }), W - 24, 42);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
+  y = 52;
 
-  // ── Seção cliente ──────────────────────────────────────────────
-  let y = 98;
-  sectionTitle(ctx, "DADOS DO CLIENTE", 24, y);
-  y += 22;
+  // ── Dados do cliente ────────────────────────────────────────────
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(M, y - 4, W - 2 * M, 24, 3, 3, "F");
 
-  const col1 = 24, col2 = W / 2 + 12;
-  infoLine(ctx, "Nome", venda.cliente_nome, col1, y);
-  infoLine(ctx, "CPF", venda.cliente_cpf, col2, y);
-  y += 22;
-  infoLine(ctx, "Telefone", venda.cliente_telefone, col1, y);
-  y += 22;
+  doc.setTextColor(14, 165, 233);
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.text("DADOS DO CLIENTE", M + 4, y + 2);
 
-  // ── Seção endereço ─────────────────────────────────────────────
-  divider(ctx, W, y + 4);
-  y += 18;
-  sectionTitle(ctx, "ENDEREÇO DE ENTREGA", 24, y);
-  y += 22;
+  doc.setTextColor(30, 41, 59);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text(venda.cliente_nome || "—", M + 4, y + 10);
 
-  const endereco = [venda.endereco_rua, venda.endereco_numero].filter(Boolean).join(", ");
-  infoLine(ctx, "Endereço", endereco, col1, y);
-  infoLine(ctx, "Bairro", venda.endereco_bairro, col2, y);
-  y += 22;
-  infoLine(ctx, "Cidade", `${venda.endereco_cidade} — ${venda.endereco_estado}`, col1, y);
-  infoLine(ctx, "CEP", venda.endereco_cep, col2, y);
-  y += 28;
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  doc.text(
+    `CPF: ${venda.cliente_cpf || "—"}   |   Telefone: ${venda.cliente_telefone || "—"}`,
+    M + 4, y + 17
+  );
+  y += 30;
 
-  // ── Tabela de itens ────────────────────────────────────────────
-  divider(ctx, W, y);
-  y += 14;
-  sectionTitle(ctx, "PRODUTOS", 24, y);
-  y += 20;
+  // ── Endereço ────────────────────────────────────────────────────
+  doc.setFillColor(241, 245, 249);
+  doc.roundedRect(M, y - 4, W - 2 * M, 24, 3, 3, "F");
 
-  // Cabeçalho tabela
-  ctx.fillStyle = "#e2e8f0";
-  roundRectFill(ctx, 20, y, W - 40, 24, 6, 6);
-  ctx.fillStyle = "#475569";
-  ctx.font = "bold 10px Arial";
-  ctx.fillText("PRODUTO", 30, y + 16);
-  ctx.textAlign = "center";
-  ctx.fillText("QTD", W / 2 - 20, y + 16);
-  ctx.textAlign = "right";
-  ctx.fillText("UNIT.", W - 100, y + 16);
-  ctx.fillText("SUBTOTAL", W - 30, y + 16);
-  ctx.textAlign = "left";
-  y += 28;
+  doc.setTextColor(14, 165, 233);
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.text("ENDEREÇO DE ENTREGA", M + 4, y + 2);
 
-  // Linhas de itens
+  doc.setTextColor(30, 41, 59);
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  const endPrincipal = [venda.endereco_rua, venda.endereco_numero]
+    .filter(Boolean).join(", ");
+  const endBairro = venda.endereco_bairro ? ` — ${venda.endereco_bairro}` : "";
+  doc.text(`${endPrincipal}${endBairro}`, M + 4, y + 10);
+  doc.setTextColor(71, 85, 105);
+  doc.setFontSize(8);
+  doc.text(
+    `${venda.endereco_cidade || "—"} — ${venda.endereco_estado || "—"}   |   CEP: ${venda.endereco_cep || "—"}`,
+    M + 4, y + 17
+  );
+  y += 32;
+
+  // ── Tabela de produtos ──────────────────────────────────────────
+  doc.setTextColor(14, 165, 233);
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.text("PRODUTOS", M, y);
+  y += 4;
+
+  // Cabeçalho
+  doc.setFillColor(30, 41, 59);
+  doc.rect(M, y, W - 2 * M, 8, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "bold");
+  doc.text("PRODUTO", M + 3, y + 5.5);
+  doc.text("QTD", 140, y + 5.5, { align: "center" });
+  doc.text("UNIT.", 162, y + 5.5, { align: "right" });
+  doc.text("SUBTOTAL", W - M, y + 5.5, { align: "right" });
+  y += 10;
+
+  // Linhas
   if (itens.length === 0) {
-    ctx.fillStyle = "#94a3b8";
-    ctx.font = "italic 11px Arial";
-    ctx.fillText("Nenhum produto registrado", 30, y + 16);
-    y += itemH;
+    doc.setFillColor(248, 250, 252);
+    doc.rect(M, y, W - 2 * M, 8, "F");
+    doc.setTextColor(148, 163, 184);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "italic");
+    doc.text("Nenhum produto registrado", M + 3, y + 5.5);
+    y += 10;
   } else {
     itens.forEach((item, idx) => {
       if (idx % 2 === 0) {
-        ctx.fillStyle = "rgba(241,245,249,0.8)";
-        roundRectFill(ctx, 20, y, W - 40, itemH - 2, 4, 4);
+        doc.setFillColor(248, 250, 252);
+      } else {
+        doc.setFillColor(255, 255, 255);
       }
-      ctx.fillStyle = "#1e293b";
-      ctx.font = "11px Arial";
-      ctx.fillText(item.product_name, 30, y + 18);
+      doc.rect(M, y, W - 2 * M, 9, "F");
 
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#0ea5e9";
-      ctx.font = "bold 11px Arial";
-      ctx.fillText(String(item.quantity), W / 2 - 20, y + 18);
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+      // Truncate long names
+      const maxNameW = 110;
+      const nameLines = doc.splitTextToSize(item.product_name, maxNameW);
+      doc.text(nameLines[0], M + 3, y + 6);
 
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#475569";
-      ctx.font = "11px Arial";
-      ctx.fillText(formatBRL(item.unit_price), W - 100, y + 18);
-      ctx.fillStyle = "#1e293b";
-      ctx.font = "bold 11px Arial";
-      ctx.fillText(formatBRL(item.quantity * item.unit_price), W - 30, y + 18);
-      ctx.textAlign = "left";
-      y += itemH;
+      doc.setTextColor(14, 165, 233);
+      doc.setFont("helvetica", "bold");
+      doc.text(String(item.quantity), 140, y + 6, { align: "center" });
+
+      doc.setTextColor(71, 85, 105);
+      doc.setFont("helvetica", "normal");
+      doc.text(formatBRL(item.unit_price), 162, y + 6, { align: "right" });
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFont("helvetica", "bold");
+      doc.text(formatBRL(item.quantity * item.unit_price), W - M, y + 6, { align: "right" });
+
+      y += 9;
     });
   }
 
+  // Linha separadora
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(M, y + 2, W - M, y + 2);
   y += 8;
-  divider(ctx, W, y);
-  y += 20;
 
-  // ── Totais ─────────────────────────────────────────────────────
-  const totalsX = W - 200;
-  totalLine(ctx, "Subtotal", formatBRL(subtotal), totalsX, y);
-  y += 22;
+  // ── Totais ───────────────────────────────────────────────────────
+  const totX = 115;
+
+  doc.setFontSize(9);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 116, 139);
+  doc.text("Subtotal", totX, y);
+  doc.setTextColor(30, 41, 59);
+  doc.setFont("helvetica", "bold");
+  doc.text(formatBRL(subtotal), W - M, y, { align: "right" });
+  y += 7;
+
+  descontos.forEach((d) => {
+    const calc = d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor;
+    const label = d.tipo === "%" ? `${d.nome} (${d.valor}%)` : d.nome;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 116, 139);
+    doc.text(label, totX, y);
+    doc.setTextColor(220, 38, 38);
+    doc.setFont("helvetica", "bold");
+    doc.text(`-${formatBRL(calc)}`, W - M, y, { align: "right" });
+    y += 7;
+  });
+
   if (frete > 0) {
-    totalLine(ctx, "Frete", formatBRL(frete), totalsX, y);
-    y += 22;
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 116, 139);
+    doc.text("Frete", totX, y);
+    doc.setTextColor(30, 41, 59);
+    doc.setFont("helvetica", "bold");
+    doc.text(formatBRL(frete), W - M, y, { align: "right" });
+    y += 7;
   }
 
-  // Linha total destaque
-  ctx.fillStyle = "#0f172a";
-  roundRectFill(ctx, totalsX - 10, y - 4, W - totalsX + 2, 30, 8, 8);
-  ctx.fillStyle = "#7dd3fc";
-  ctx.font = "bold 13px Arial";
-  ctx.fillText("TOTAL", totalsX, y + 16);
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "bold 15px Arial";
-  ctx.fillText(formatBRL(total), W - 30, y + 16);
-  ctx.textAlign = "left";
-  y += 40;
+  y += 2;
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(totX - 4, y - 3, W - totX - M + 4, 13, 3, 3, "F");
+  doc.setTextColor(125, 211, 252);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.text("TOTAL", totX + 2, y + 7);
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(12);
+  doc.text(formatBRL(total), W - M, y + 7, { align: "right" });
+  y += 18;
 
-  // Observações
+  // ── Observações ──────────────────────────────────────────────────
   if (venda.observacoes) {
-    divider(ctx, W, y);
-    y += 16;
-    ctx.fillStyle = "#64748b";
-    ctx.font = "bold 9px Arial";
-    ctx.fillText("OBSERVAÇÕES", 24, y);
-    y += 14;
-    ctx.fillStyle = "#334155";
-    ctx.font = "italic 11px Arial";
-    ctx.fillText(venda.observacoes, 24, y);
-    y += 20;
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.3);
+    doc.line(M, y, W - M, y);
+    y += 6;
+
+    doc.setTextColor(14, 165, 233);
+    doc.setFontSize(7);
+    doc.setFont("helvetica", "bold");
+    doc.text("OBSERVAÇÕES", M, y);
+    y += 5;
+
+    doc.setTextColor(51, 65, 85);
+    doc.setFontSize(8.5);
+    doc.setFont("helvetica", "italic");
+    const obsLines = doc.splitTextToSize(venda.observacoes, W - 2 * M);
+    doc.text(obsLines, M, y);
+    y += obsLines.length * 5 + 5;
   }
 
-  // Footer
-  ctx.fillStyle = "#f1f5f9";
-  roundRectFill(ctx, 8, H - 44, W - 16, 36, 0, 12);
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "10px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(
+  // ── Footer ───────────────────────────────────────────────────────
+  const footerY = 280;
+  doc.setFillColor(241, 245, 249);
+  doc.rect(0, footerY, W, 17, "F");
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.3);
+  doc.line(0, footerY, W, footerY);
+  doc.setTextColor(148, 163, 184);
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(
     `Documento gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })} • PharPep Suplementos`,
-    W / 2,
-    H - 22,
+    W / 2, footerY + 9, { align: "center" }
   );
-  ctx.textAlign = "left";
 
-  const link = document.createElement("a");
-  link.download = `orcamento-${venda.cliente_nome.replace(/\s+/g, "-")}-${venda.id.slice(0, 8)}.png`;
-  link.href = canvas.toDataURL("image/png");
-  link.click();
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function roundRectFill(
-  ctx: CanvasRenderingContext2D,
-  x: number, y: number, w: number, h: number,
-  tl: number, br: number,
-) {
-  const tr = tl, bl = br;
-  ctx.beginPath();
-  ctx.moveTo(x + tl, y);
-  ctx.lineTo(x + w - tr, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + tr);
-  ctx.lineTo(x + w, y + h - br);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
-  ctx.lineTo(x + bl, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - bl);
-  ctx.lineTo(x, y + tl);
-  ctx.quadraticCurveTo(x, y, x + tl, y);
-  ctx.closePath();
-  ctx.fill();
-}
-
-function sectionTitle(ctx: CanvasRenderingContext2D, text: string, x: number, y: number) {
-  ctx.fillStyle = "#0ea5e9";
-  ctx.font = "bold 9px Arial";
-  ctx.fillText(text, x, y);
-}
-
-function divider(ctx: CanvasRenderingContext2D, W: number, y: number) {
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(20, y);
-  ctx.lineTo(W - 20, y);
-  ctx.stroke();
-  ctx.setLineDash([]);
-}
-
-function infoLine(ctx: CanvasRenderingContext2D, label: string, value: string, x: number, y: number) {
-  ctx.fillStyle = "#94a3b8";
-  ctx.font = "9px Arial";
-  ctx.fillText(label, x, y);
-  ctx.fillStyle = "#1e293b";
-  ctx.font = "11px Arial";
-  ctx.fillText(value || "—", x, y + 12);
-}
-
-function totalLine(ctx: CanvasRenderingContext2D, label: string, value: string, x: number, y: number) {
-  ctx.fillStyle = "#64748b";
-  ctx.font = "11px Arial";
-  ctx.fillText(label, x, y + 13);
-  ctx.textAlign = "right";
-  ctx.fillStyle = "#1e293b";
-  ctx.font = "bold 11px Arial";
-  ctx.fillText(value, x + 190, y + 13);
-  ctx.textAlign = "left";
+  doc.save(
+    `orcamento-${venda.cliente_nome.replace(/\s+/g, "-")}-${venda.id.slice(0, 8)}.pdf`
+  );
 }
 
 // ─── Main component ────────────────────────────────────────────────────────────
@@ -571,9 +555,11 @@ function VendasAdmin() {
 // ─── Modal Visualizar ──────────────────────────────────────────────────────────
 function VendaViewer({ venda, onClose }: { venda: VendaRow; onClose: () => void }) {
   const itens: VendaItem[] = Array.isArray(venda.itens) ? venda.itens : [];
+  const descontos: VendaDesconto[] = Array.isArray(venda.descontos) ? venda.descontos : [];
   const frete = Number(venda.frete) || 0;
   const subtotal = itens.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  const total = subtotal + frete;
+  const descontoTotal = descontos.reduce((s, d) => s + (d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor), 0);
+  const total = Math.max(0, subtotal - descontoTotal + frete);
 
   return (
     <div
@@ -596,21 +582,18 @@ function VendaViewer({ venda, onClose }: { venda: VendaRow; onClose: () => void 
           </button>
         </div>
 
-        {/* Cliente */}
         <section className="mb-4 rounded-xl border border-white/8 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Cliente</p>
           <p className="font-semibold">{venda.cliente_nome}</p>
           <p className="text-sm text-muted-foreground">{venda.cliente_cpf} · {venda.cliente_telefone}</p>
         </section>
 
-        {/* Endereço */}
         <section className="mb-4 rounded-xl border border-white/8 p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Endereço</p>
           <p className="text-sm">{venda.endereco_rua}, {venda.endereco_numero} — {venda.endereco_bairro}</p>
           <p className="text-sm text-muted-foreground">{venda.endereco_cidade} — {venda.endereco_estado} · CEP {venda.endereco_cep}</p>
         </section>
 
-        {/* Produtos */}
         <section className="mb-4 rounded-xl border border-white/8 p-4">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Produtos</p>
           {itens.length === 0 ? (
@@ -627,12 +610,22 @@ function VendaViewer({ venda, onClose }: { venda: VendaRow; onClose: () => void 
           )}
         </section>
 
-        {/* Totais */}
         <section className="mb-4 rounded-xl border border-white/8 p-4 space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Subtotal</span>
             <span>{formatBRL(subtotal)}</span>
           </div>
+          {descontos.map((d, i) => {
+            const calc = d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor;
+            return (
+              <div key={i} className="flex justify-between text-sm">
+                <span className="text-muted-foreground">
+                  {d.nome}{d.tipo === "%" ? ` (${d.valor}%)` : ""}
+                </span>
+                <span className="text-red-400 font-medium">-{formatBRL(calc)}</span>
+              </div>
+            );
+          })}
           {frete > 0 && (
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Frete</span>
@@ -658,11 +651,115 @@ function VendaViewer({ venda, onClose }: { venda: VendaRow; onClose: () => void 
 
         <button
           onClick={() => gerarPDF(venda)}
-          className="btn-hero w-full rounded-xl py-3 text-sm font-semibold"
+          className="btn-hero w-full inline-flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-semibold"
         >
-          Gerar PDF / Orçamento
+          <FileText className="h-4 w-4" />
+          Gerar Orçamento em PDF
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Product Picker ────────────────────────────────────────────────────────────
+function ProductPicker({
+  products,
+  selected,
+  onSelect,
+}: {
+  products: PharpepProduct[];
+  selected: PharpepProduct | null;
+  onSelect: (p: PharpepProduct) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = products.filter((p) =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={inputCls + " flex items-center justify-between text-left"}
+      >
+        <span className={selected ? "text-foreground" : "text-muted-foreground"}>
+          {selected ? selected.name : "Selecionar produto..."}
+        </span>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute z-[60] left-0 right-0 mt-1 rounded-2xl border border-border bg-card shadow-2xl overflow-hidden">
+          {/* Search */}
+          <div className="border-b border-border p-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar produto..."
+                className="w-full rounded-xl bg-input/40 py-2.5 pl-9 pr-4 text-sm outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary border border-border"
+              />
+            </div>
+          </div>
+
+          {/* Product list */}
+          <div className="max-h-56 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">Nenhum produto encontrado</p>
+            ) : (
+              filtered.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(p);
+                    setOpen(false);
+                    setSearch("");
+                  }}
+                  className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-white/5 ${
+                    selected?.id === p.id ? "bg-primary/10" : ""
+                  }`}
+                >
+                  {p.primary_image_url ? (
+                    <img
+                      src={p.primary_image_url}
+                      alt=""
+                      className="h-11 w-11 shrink-0 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/5">
+                      <Package className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium leading-tight">{p.name}</p>
+                    <p className="text-xs font-semibold text-primary">{formatBRL(p.price)}</p>
+                  </div>
+                  {selected?.id === p.id && (
+                    <div className="h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -671,12 +768,10 @@ function VendaViewer({ venda, onClose }: { venda: VendaRow; onClose: () => void 
 function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: () => void }) {
   const qc = useQueryClient();
 
-  // Dados cliente
   const [nome, setNome] = useState(initial?.cliente_nome ?? "");
   const [cpf, setCpf] = useState(initial?.cliente_cpf ?? "");
   const [telefone, setTelefone] = useState(initial?.cliente_telefone ?? "");
 
-  // Endereço
   const [rua, setRua] = useState(initial?.endereco_rua ?? "");
   const [numero, setNumero] = useState(initial?.endereco_numero ?? "");
   const [bairro, setBairro] = useState(initial?.endereco_bairro ?? "");
@@ -684,12 +779,10 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
   const [estado, setEstado] = useState(initial?.endereco_estado ?? "SP");
   const [cep, setCep] = useState(initial?.endereco_cep ?? "");
 
-  // Itens
   const [itens, setItens] = useState<VendaItem[]>(
     Array.isArray(initial?.itens) ? initial.itens : [],
   );
 
-  // Frete e obs
   const [freteStr, setFreteStr] = useState(() => {
     const f = Number(initial?.frete) || 0;
     return f > 0 ? f.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "";
@@ -698,14 +791,22 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
   const [saving, setSaving] = useState(false);
 
   // Produto sendo adicionado
-  const [addProductId, setAddProductId] = useState("");
+  const [selectedProd, setSelectedProd] = useState<PharpepProduct | null>(null);
   const [addQty, setAddQty] = useState("1");
+  const [addPriceStr, setAddPriceStr] = useState("");
+
+  const [descontos, setDescontos] = useState<VendaDesconto[]>(
+    Array.isArray(initial?.descontos) ? initial.descontos : [],
+  );
+  const [addDescontoNome, setAddDescontoNome] = useState("");
+  const [addDescontoTipo, setAddDescontoTipo] = useState<"%" | "R$">("%");
+  const [addDescontoValorStr, setAddDescontoValorStr] = useState("");
 
   const { data: products = [] } = useQuery({
     queryKey: ["pharpep-products-form"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("products")
+        .from("pharpep_products")
         .select("id, name, price, primary_image_url, active")
         .eq("active", true)
         .order("name");
@@ -716,28 +817,61 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
 
   const frete = parseBRL(freteStr);
   const subtotal = itens.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-  const total = subtotal + frete;
+  const descontoTotal = descontos.reduce((s, d) => s + (d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor), 0);
+  const total = Math.max(0, subtotal - descontoTotal + frete);
+
+  const handleSelectProd = (p: PharpepProduct) => {
+    setSelectedProd(p);
+    setAddPriceStr(p.price.toLocaleString("pt-BR", { minimumFractionDigits: 2 }));
+    setAddQty("1");
+  };
 
   const addItem = useCallback(() => {
-    const prod = products.find((p) => p.id === addProductId);
-    if (!prod) return toast.error("Selecione um produto");
+    console.log("addItem chamado:", { selectedProd, addQty, addPriceStr });
+    if (!selectedProd) return toast.error("Selecione um produto");
     const qty = parseInt(addQty, 10);
     if (!qty || qty < 1) return toast.error("Quantidade inválida");
+    const price = parseBRL(addPriceStr) > 0 ? parseBRL(addPriceStr) : selectedProd.price;
+    console.log("Preço final:", price);
 
     setItens((prev) => {
-      const exists = prev.findIndex((i) => i.product_id === prod.id);
+      const exists = prev.findIndex((i) => i.product_id === selectedProd.id);
       if (exists >= 0) {
         const updated = [...prev];
-        updated[exists] = { ...updated[exists], quantity: updated[exists].quantity + qty };
+        updated[exists] = { ...updated[exists], quantity: updated[exists].quantity + qty, unit_price: price };
+        console.log("Item atualizado:", updated[exists]);
         return updated;
       }
-      return [...prev, { product_id: prod.id, product_name: prod.name, quantity: qty, unit_price: prod.price }];
+      const novo = [...prev, { product_id: selectedProd.id, product_name: selectedProd.name, quantity: qty, unit_price: price }];
+      console.log("Novo item adicionado:", novo[novo.length - 1]);
+      console.log("Novo array de itens:", novo);
+      return novo;
     });
-    setAddProductId("");
+
+    setSelectedProd(null);
     setAddQty("1");
-  }, [addProductId, addQty, products]);
+    setAddPriceStr("");
+  }, [selectedProd, addQty, addPriceStr]);
 
   const removeItem = (idx: number) => setItens((prev) => prev.filter((_, i) => i !== idx));
+
+  const addDesconto = () => {
+    console.log("addDesconto chamado:", { addDescontoNome, addDescontoValorStr, addDescontoTipo });
+    if (!addDescontoNome.trim()) return toast.error("Informe o nome do desconto");
+    const v = parseBRL(addDescontoValorStr);
+    console.log("Valor parseado:", v);
+    if (!v || v <= 0) return toast.error("Informe o valor do desconto");
+    if (addDescontoTipo === "%" && v > 100) return toast.error("Desconto em % não pode ser maior que 100");
+    setDescontos((prev) => {
+      const novo = [...prev, { nome: addDescontoNome.trim(), tipo: addDescontoTipo, valor: v }];
+      console.log("Novo array de descontos:", novo);
+      return novo;
+    });
+    setAddDescontoNome("");
+    setAddDescontoValorStr("");
+  };
+
+  const removeDesconto = (idx: number) => setDescontos((prev) => prev.filter((_, i) => i !== idx));
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -754,43 +888,66 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
       endereco_cidade: cidade,
       endereco_estado: estado.toUpperCase().slice(0, 2),
       endereco_cep: cep,
-      itens: itens as unknown as import("@/integrations/supabase/types").Json,
+      itens,
+      descontos,
       frete,
       valor: total,
       status: "concluido",
       observacoes,
     };
 
+    console.log("Payload enviado:", JSON.stringify(payload, null, 2));
+    console.log("Descontos array:", descontos);
+    console.log("Itens array:", itens);
+
     try {
       if (initial) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error } = await supabase.from("vendas").update(payload as any).eq("id", initial.id);
+        console.log("Update vendas error:", error);
         if (error) throw error;
-        await supabase
+        const { error: finError } = await supabase
           .from("financas")
           .update({ valor: total * 0.1, descricao: `Venda: ${itens.map((i) => i.product_name).join(", ")} — ${nome}` })
           .eq("venda_id", initial.id);
+        if (finError) {
+          console.error("Erro ao atualizar finanças:", finError);
+          toast.warning("Venda salva, mas houve erro ao atualizar finanças");
+        }
       } else {
+        console.log("Inserindo nova venda...");
+        console.log("Payload para Supabase:", payload);
         const { data: inserted, error } = await supabase
           .from("vendas")
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .insert(payload as any)
-          .select("id")
-          .single();
+          .select("id");
+        console.log("Insert vendas result:", { inserted, error });
         if (error) throw error;
+        console.log("Venda inserida, dados:", inserted);
+        const vendaId = (inserted as any)?.[0]?.id;
+        console.log("ID da venda:", vendaId);
+        if (!vendaId) throw new Error("Não foi possível obter o ID da venda");
         const hoje = new Date().toISOString().slice(0, 10);
-        await supabase.from("financas").insert({
-          venda_id: inserted.id,
+        console.log("Inserindo em finanças...");
+        const { error: finError } = await supabase.from("financas").insert({
+          venda_id: vendaId,
           valor: total * 0.1,
           tipo: "entrada",
           data: hoje,
           descricao: `Venda: ${itens.map((i) => i.product_name).join(", ")} — ${nome}`,
         });
+        console.log("Insert financas result:", { finError });
+        if (finError) {
+          console.error("Erro ao inserir em finanças:", finError);
+          toast.warning("Venda salva, mas houve erro ao registrar financeiro");
+        }
       }
       qc.invalidateQueries({ queryKey: ["admin-financas"] });
       toast.success("Venda salva!");
       onClose();
     } catch (err: unknown) {
+      console.error("Erro ao salvar venda:", err);
       toast.error(err instanceof Error ? err.message : "Erro ao salvar");
     } finally {
       setSaving(false);
@@ -893,52 +1050,90 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Produtos</h3>
 
-            {/* Adicionador */}
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <select
-                  value={addProductId}
-                  onChange={(e) => {
-                    setAddProductId(e.target.value);
-                  }}
-                  className={inputCls + " appearance-none pr-8"}
-                >
-                  <option value="">Selecionar produto...</option>
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} — {formatBRL(p.price)}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              </div>
-              <input
-                type="number"
-                min={1}
-                value={addQty}
-                onChange={(e) => setAddQty(e.target.value)}
-                className={inputCls + " w-20"}
-                placeholder="Qtd"
-              />
-              <button
-                type="button"
-                onClick={addItem}
-                className="btn-hero flex-shrink-0 rounded-xl px-4 text-sm font-semibold"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
+            {/* Picker + controles de adição */}
+            <div className="space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <Field label="Selecionar produto">
+                <ProductPicker
+                  products={products}
+                  selected={selectedProd}
+                  onSelect={handleSelectProd}
+                />
+              </Field>
+
+              {selectedProd && (
+                <>
+                  {/* Preview do produto selecionado */}
+                  <div className="flex items-center gap-3 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                    {selectedProd.primary_image_url ? (
+                      <img
+                        src={selectedProd.primary_image_url}
+                        alt=""
+                        className="h-12 w-12 shrink-0 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/5">
+                        <Package className="h-6 w-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="truncate text-sm font-semibold">{selectedProd.name}</p>
+                      <p className="text-xs text-muted-foreground">Preço sugerido: <span className="font-medium text-primary">{formatBRL(selectedProd.price)}</span></p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedProd(null); setAddPriceStr(""); setAddQty("1"); }}
+                      className="rounded-lg p-1 hover:bg-white/10"
+                    >
+                      <X className="h-4 w-4 text-muted-foreground" />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                    <Field label="Quantidade">
+                      <input
+                        type="number"
+                        min={1}
+                        value={addQty}
+                        onChange={(e) => setAddQty(e.target.value)}
+                        className={inputCls}
+                        placeholder="1"
+                      />
+                    </Field>
+                    <Field label="Preço unitário (R$)">
+                      <input
+                        value={addPriceStr}
+                        onChange={(e) => setAddPriceStr(maskValor(e.target.value))}
+                        className={inputCls}
+                        placeholder="0,00"
+                        inputMode="numeric"
+                      />
+                    </Field>
+                    <div className="pb-0.5">
+                      <button
+                        type="button"
+                        onClick={addItem}
+                        className="btn-hero h-[46px] w-full rounded-xl px-4 text-sm font-semibold"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Lista de itens adicionados */}
             {itens.length > 0 && (
               <div className="rounded-xl border border-white/8 overflow-hidden">
                 {itens.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-3 border-b border-white/5 px-4 py-2.5 last:border-0">
-                    <Package className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div key={idx} className="flex items-center gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/5">
+                      <Package className="h-4 w-4 text-muted-foreground" />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <p className="truncate text-sm font-medium">{item.product_name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {item.quantity}× {formatBRL(item.unit_price)} = {formatBRL(item.quantity * item.unit_price)}
+                        {item.quantity}× {formatBRL(item.unit_price)} = <span className="font-semibold text-foreground">{formatBRL(item.quantity * item.unit_price)}</span>
                       </p>
                     </div>
                     <button
@@ -950,6 +1145,79 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* Descontos */}
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Descontos</h3>
+            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-end">
+              <Field label="Nome do desconto">
+                <input
+                  value={addDescontoNome}
+                  onChange={(e) => setAddDescontoNome(e.target.value)}
+                  className={inputCls}
+                  placeholder="Ex: Cupom cliente fiel"
+                />
+              </Field>
+              <Field label="Tipo">
+                <div className="flex overflow-hidden rounded-xl border border-border h-[46px]">
+                  <button
+                    type="button"
+                    onClick={() => setAddDescontoTipo("%")}
+                    className={`flex-1 px-3 text-sm font-semibold transition ${addDescontoTipo === "%" ? "bg-primary text-white" : "bg-input/40 text-muted-foreground hover:bg-white/5"}`}
+                  >%</button>
+                  <button
+                    type="button"
+                    onClick={() => setAddDescontoTipo("R$")}
+                    className={`flex-1 px-3 text-sm font-semibold transition ${addDescontoTipo === "R$" ? "bg-primary text-white" : "bg-input/40 text-muted-foreground hover:bg-white/5"}`}
+                  >R$</button>
+                </div>
+              </Field>
+              <Field label="Valor">
+                <input
+                  value={addDescontoValorStr}
+                  onChange={(e) => setAddDescontoValorStr(maskValor(e.target.value))}
+                  className={inputCls + " w-28"}
+                  placeholder="0,00"
+                  inputMode="numeric"
+                />
+              </Field>
+              <div className="pb-0.5">
+                <button
+                  type="button"
+                  onClick={addDesconto}
+                  className="btn-hero h-[46px] rounded-xl px-4 text-sm font-semibold"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {descontos.length > 0 && (
+              <div className="rounded-xl border border-white/8 overflow-hidden">
+                {descontos.map((d, idx) => {
+                  const calc = d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor;
+                  return (
+                    <div key={idx} className="flex items-center gap-3 border-b border-white/5 px-4 py-2.5 last:border-0">
+                      <Tag className="h-4 w-4 shrink-0 text-red-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="truncate text-sm font-medium">{d.nome}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {d.tipo === "%" ? `${d.valor}%` : formatBRL(d.valor)} = -{formatBRL(calc)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeDesconto(idx)}
+                        className="rounded-lg p-1 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -979,12 +1247,23 @@ function VendaForm({ initial, onClose }: { initial: VendaRow | null; onClose: ()
           </section>
 
           {/* Preview de valores */}
-          {total > 0 && (
+          {(subtotal > 0 || total > 0) && (
             <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 space-y-1.5">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
                 <span>{formatBRL(subtotal)}</span>
               </div>
+              {descontos.map((d, i) => {
+                const calc = d.tipo === "%" ? (subtotal * d.valor) / 100 : d.valor;
+                return (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      {d.nome}{d.tipo === "%" ? ` (${d.valor}%)` : ""}
+                    </span>
+                    <span className="text-red-400 font-medium">-{formatBRL(calc)}</span>
+                  </div>
+                );
+              })}
               {frete > 0 && (
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Frete</span>

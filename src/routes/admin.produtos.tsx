@@ -29,7 +29,7 @@ function ProductsAdmin() {
   const { data: products, isLoading } = useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("products").select("*").order("sort_order").order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("pharpep_products").select("*").order("sort_order").order("created_at", { ascending: false });
       if (error) throw error;
       return data as ProductRow[];
     },
@@ -37,7 +37,7 @@ function ProductsAdmin() {
 
   const onDelete = async (id: string) => {
     if (!confirm("Excluir este produto?")) return;
-    const { error } = await supabase.from("products").delete().eq("id", id);
+    const { error } = await supabase.from("pharpep_products").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Produto excluído");
     qc.invalidateQueries({ queryKey: ["admin-products"] });
@@ -98,21 +98,22 @@ function ProductForm({ initial, onClose }: { initial: ProductRow | null; onClose
 
   useEffect(() => {
     if (initial) {
-      supabase.from("product_images").select("id, url").eq("product_id", initial.id).order("sort_order").then(({ data }) => {
+      supabase.from("pharpep_product_images").select("id, url").eq("product_id", initial.id).order("sort_order").then(({ data }) => {
         if (data) setImages(data);
       });
     }
   }, [initial]);
 
   const onUpload = async (files: FileList | null) => {
-    if (!files || !user) return;
+    if (!files) return;
+    if (!user) { toast.error("Sessão expirada. Faça login novamente."); return; }
     setUploading(true);
     const uploaded: { url: string }[] = [];
     for (const file of Array.from(files)) {
-      const ext = file.name.split(".").pop();
+      const ext = file.name.split(".").pop() ?? "jpg";
       const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
       const { error } = await supabase.storage.from("product-images").upload(path, file, { upsert: false });
-      if (error) { toast.error(error.message); continue; }
+      if (error) { toast.error(`Erro no upload: ${error.message}`); continue; }
       const { data } = supabase.storage.from("product-images").getPublicUrl(path);
       uploaded.push({ url: data.publicUrl });
     }
@@ -126,7 +127,7 @@ function ProductForm({ initial, onClose }: { initial: ProductRow | null; onClose
   };
 
   const removeImage = async (img: { id?: string; url: string }) => {
-    if (img.id) await supabase.from("product_images").delete().eq("id", img.id);
+    if (img.id) await supabase.from("pharpep_product_images").delete().eq("id", img.id);
     setImages((prev) => prev.filter((i) => i.url !== img.url));
     if (primaryUrl === img.url) setPrimaryUrl(null);
   };
@@ -144,17 +145,18 @@ function ProductForm({ initial, onClose }: { initial: ProductRow | null; onClose
     try {
       let productId = initial?.id;
       if (initial) {
-        const { error } = await supabase.from("products").update(payload).eq("id", initial.id);
+        const { error } = await supabase.from("pharpep_products").update(payload).eq("id", initial.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase.from("products").insert(payload).select("id").single();
+        const { data, error } = await supabase.from("pharpep_products").insert(payload).select("id").single();
         if (error) throw error;
         productId = data.id;
       }
       // Sync images: insert any without an id
       const toInsert = images.filter((i) => !i.id).map((i, idx) => ({ product_id: productId!, url: i.url, sort_order: idx }));
       if (toInsert.length > 0) {
-        await supabase.from("product_images").insert(toInsert);
+        const { error: imgErr } = await supabase.from("pharpep_product_images").insert(toInsert);
+        if (imgErr) throw imgErr;
       }
       toast.success("Salvo!");
       onClose();

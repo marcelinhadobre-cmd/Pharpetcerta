@@ -69,7 +69,13 @@ function LoginPage() {
         email: phoneToEmail(regPhone),
         password: regPassword,
       });
-      if (error) throw new Error("Conta criada! Faça login manualmente.");
+      if (error) {
+        toast.success("Conta criada com sucesso! Faça login para continuar.");
+        setTab("entrar");
+        setLoginPhone(regPhone);
+        setRegistering(false);
+        return;
+      }
       toast.success("Conta criada! Bem-vindo(a)!");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erro ao criar conta");

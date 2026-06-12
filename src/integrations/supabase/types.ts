@@ -44,7 +44,7 @@ export type Database = {
             foreignKeyName: "analytics_events_product_id_fkey"
             columns: ["product_id"]
             isOneToOne: false
-            referencedRelation: "products"
+            referencedRelation: "pharpep_products"
             referencedColumns: ["id"]
           },
         ]
@@ -236,6 +236,7 @@ export type Database = {
           descricao: string
           valor: number
           tipo: string
+          venda_id: string | null
         }
         Insert: {
           id?: string
@@ -244,6 +245,7 @@ export type Database = {
           descricao: string
           valor: number
           tipo: string
+          venda_id?: string | null
         }
         Update: {
           id?: string
@@ -252,6 +254,7 @@ export type Database = {
           descricao?: string
           valor?: number
           tipo?: string
+          venda_id?: string | null
         }
         Relationships: []
       }
@@ -268,7 +271,9 @@ export type Database = {
           endereco_cidade: string
           endereco_estado: string
           endereco_cep: string
-          produto: string
+          itens: Json
+          descontos: Json
+          frete: number
           valor: number
           status: string
           observacoes: string
@@ -285,7 +290,9 @@ export type Database = {
           endereco_cidade: string
           endereco_estado?: string
           endereco_cep: string
-          produto: string
+          itens?: Json
+          descontos?: Json
+          frete?: number
           valor?: number
           status?: string
           observacoes?: string
@@ -302,10 +309,36 @@ export type Database = {
           endereco_cidade?: string
           endereco_estado?: string
           endereco_cep?: string
-          produto?: string
+          itens?: Json
+          descontos?: Json
+          frete?: number
           valor?: number
           status?: string
           observacoes?: string
+        }
+        Relationships: []
+      }
+      pharpep_product_images: {
+        Row: {
+          id: string
+          created_at: string
+          product_id: string
+          url: string
+          sort_order: number
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          product_id: string
+          url: string
+          sort_order?: number
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          product_id?: string
+          url?: string
+          sort_order?: number
         }
         Relationships: []
       }

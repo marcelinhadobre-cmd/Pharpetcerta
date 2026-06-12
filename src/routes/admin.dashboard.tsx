@@ -17,7 +17,7 @@ function Dashboard() {
       const [pv, orders, prods, events] = await Promise.all([
         supabase.from("analytics_events").select("session_id, created_at", { count: "exact" }).eq("event_type", "page_view"),
         supabase.from("analytics_events").select("id", { count: "exact", head: true }).eq("event_type", "order_click"),
-        supabase.from("products").select("id", { count: "exact", head: true }),
+        supabase.from("pharpep_products").select("id", { count: "exact", head: true }),
         supabase.from("analytics_events").select("event_type, created_at").gte("created_at", since).order("created_at"),
       ]);
 

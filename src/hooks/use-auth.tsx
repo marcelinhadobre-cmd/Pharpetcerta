@@ -135,24 +135,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let initialized = false;
 
     // Verificação autoritativa (pode refrescar o token se necessário)
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      if (!mounted) return;
-      if (s?.user) {
-        const { admin, prof } = await loadUserData(s.user.id);
+    (async () => {
+      try {
+        const { data: { session: s } } = await supabase.auth.getSession();
         if (!mounted) return;
-        setSession(s);
-        setIsAdmin(admin);
-        setProfile(prof);
-      } else {
-        // Sem sessão válida — limpa tudo
-        setSession(null);
-        setIsAdmin(false);
-        setProfile(null);
-        setCachedAdmin(false);
+        if (s?.user) {
+          const { admin, prof } = await loadUserData(s.user.id);
+          if (!mounted) return;
+          setSession(s);
+          setIsAdmin(admin);
+          setProfile(prof);
+        } else {
+          setSession(null);
+          setIsAdmin(false);
+          setProfile(null);
+          setCachedAdmin(false);
+        }
+      } catch (e) {
+        console.error("Erro ao inicializar auth:", e);
+      } finally {
+        if (mounted) {
+          initialized = true;
+          setLoading(false);
+        }
       }
-      initialized = true;
-      setLoading(false);
-    });
+    })();
 
     // Eventos subsequentes (login, logout, refresh de token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
